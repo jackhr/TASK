@@ -1,0 +1,20 @@
+Options -Indexes -MultiViews
+
+RewriteEngine On
+
+# Block direct access to private project files when the repo root is the document root.
+RewriteRule "(^|/)\.(?!well-known/)" - [F,L]
+RewriteRule "^(server|database|frontend|node_modules)/" - [F,L,NC]
+RewriteRule "^(package(-lock)?\.json|tsconfig(\.node)?\.json|vite\.config\.ts|README\.md)$" - [F,L,NC]
+
+# Serve ACME challenges directly if they exist.
+RewriteRule "^\.well-known/" - [L]
+
+# If the request already targets a real file or directory at the project root, serve it.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Otherwise route the request through the public web root.
+RewriteRule ^(.*)$ public/$1 [L]
+

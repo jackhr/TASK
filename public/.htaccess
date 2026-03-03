@@ -1,0 +1,19 @@
+Options -Indexes -MultiViews
+AddType text/javascript .js
+AddType application/javascript .mjs
+AddType text/css .css
+
+RewriteEngine On
+
+# Never rewrite built frontend assets. Support both the current root build and the legacy /app build.
+RewriteRule ^assets/ - [L]
+RewriteRule ^app/assets/ - [L]
+RewriteRule ^.*\.(?:css|js|mjs|json|map|png|jpe?g|gif|svg|webp|ico|txt|woff2?)$ - [L,NC]
+
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+RewriteRule ^api/?(.*)$ api/index.php?route=$1 [QSA,L]
+RewriteRule ^app(?:/.*)?$ app/index.html [L]
+RewriteRule ^ index.php [L]
