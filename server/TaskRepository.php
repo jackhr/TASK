@@ -8,70 +8,60 @@ final class TaskRepository
     {
     }
 
-    public function getAll(?string $status = null, ?string $search = null): array
+    public function getAllWithCompletions(string $fromDate, string $toDate): array
     {
-        $sql = <<<SQL
-            SELECT id, title, description, status, priority, due_date, created_at, updated_at
-            FROM tasks
-        SQL;
+        $statement = $this->pdo->query(
+            'SELECT id, title, description, created_at, updated_at FROM tasks ORDER BY created_at ASC, title ASC'
+        );
+        $tasks = [];
 
-        $conditions = [];
-        $params = [];
-
-        if ($status !== null && $status !== '') {
-            $conditions[] = 'status = :status';
-            $params['status'] = $status;
+        foreach ($statement->fetchAll() as $row) {
+            $taskId = (int) $row['id'];
+            $tasks[$taskId] = $this->mapTask($row, []);
         }
 
-        if ($search !== null && $search !== '') {
-            $conditions[] = '(title LIKE :search OR description LIKE :search)';
-            $params['search'] = '%' . $search . '%';
+        if ($tasks === []) {
+            return [];
         }
 
-        if ($conditions !== []) {
-            $sql .= ' WHERE ' . implode(' AND ', $conditions);
+        $completionDates = $this->loadCompletionDates(array_keys($tasks), $fromDate, $toDate);
+
+        foreach ($tasks as $taskId => $task) {
+            $tasks[$taskId]['completionDates'] = $completionDates[$taskId] ?? [];
         }
 
-        $sql .= <<<SQL
-             ORDER BY
-                CASE status
-                    WHEN 'todo' THEN 1
-                    WHEN 'in_progress' THEN 2
-                    ELSE 3
-                END,
-                CASE WHEN due_date IS NULL THEN 1 ELSE 0 END,
-                due_date ASC,
-                created_at DESC
-        SQL;
-
-        $statement = $this->pdo->prepare($sql);
-        $statement->execute($params);
-
-        return array_map(fn (array $row): array => $this->mapTask($row), $statement->fetchAll());
+        return array_values($tasks);
     }
 
-    public function find(int $id): ?array
+    public function find(int $id, ?string $fromDate = null, ?string $toDate = null): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT id, title, description, status, priority, due_date, created_at, updated_at FROM tasks WHERE id = :id LIMIT 1'
+            'SELECT id, title, description, created_at, updated_at FROM tasks WHERE id = :id LIMIT 1'
         );
         $statement->execute(['id' => $id]);
         $task = $statement->fetch();
 
-        return is_array($task) ? $this->mapTask($task) : null;
+        if (!is_array($task)) {
+            return null;
+        }
+
+        $completionDates = [];
+
+        if ($fromDate !== null && $toDate !== null) {
+            $completionDates = $this->loadCompletionDates([$id], $fromDate, $toDate)[$id] ?? [];
+        }
+
+        return $this->mapTask($task, $completionDates);
     }
 
     public function create(array $data): array
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO tasks (title, description, status, priority, due_date) VALUES (:title, :description, :status, :priority, :due_date)'
+            'INSERT INTO tasks (title, description) VALUES (:title, :description)'
         );
         $statement->execute([
             'title' => $data['title'],
             'description' => $data['description'],
-            'status' => $data['status'],
-            'priority' => $data['priority'],
-            'due_date' => $data['due_date'],
         ]);
 
         return $this->find((int) $this->pdo->lastInsertId()) ?? throw new RuntimeException('Task was created but could not be reloaded.');
@@ -107,24 +97,94 @@ final class TaskRepository
 
     public function delete(int $id): bool
     {
-        $statement = $this->pdo->prepare('DELETE FROM tasks WHERE id = :id');
-        $statement->execute(['id' => $id]);
+        $this->pdo->beginTransaction();
 
-        return $statement->rowCount() > 0;
+        try {
+            $completionStatement = $this->pdo->prepare('DELETE FROM task_completions WHERE task_id = :id');
+            $completionStatement->execute(['id' => $id]);
+
+            $taskStatement = $this->pdo->prepare('DELETE FROM tasks WHERE id = :id');
+            $taskStatement->execute(['id' => $id]);
+
+            $this->pdo->commit();
+
+            return $taskStatement->rowCount() > 0;
+        } catch (Throwable $exception) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+
+            throw $exception;
+        }
     }
 
-    private function mapTask(array $row): array
+    public function setCompletion(int $taskId, string $date, bool $completed): ?array
+    {
+        if ($this->find($taskId) === null) {
+            return null;
+        }
+
+        if ($completed) {
+            $statement = $this->pdo->prepare(
+                'INSERT INTO task_completions (task_id, completed_on) VALUES (:task_id, :completed_on)
+                 ON DUPLICATE KEY UPDATE completed_on = VALUES(completed_on)'
+            );
+            $statement->execute([
+                'task_id' => $taskId,
+                'completed_on' => $date,
+            ]);
+        } else {
+            $statement = $this->pdo->prepare(
+                'DELETE FROM task_completions WHERE task_id = :task_id AND completed_on = :completed_on'
+            );
+            $statement->execute([
+                'task_id' => $taskId,
+                'completed_on' => $date,
+            ]);
+        }
+
+        return $this->find($taskId, $date, $date);
+    }
+
+    private function mapTask(array $row, array $completionDates): array
     {
         return [
             'id' => (int) $row['id'],
             'title' => (string) $row['title'],
             'description' => $row['description'] === null ? '' : (string) $row['description'],
-            'status' => (string) $row['status'],
-            'priority' => (string) $row['priority'],
-            'dueDate' => $this->toIsoString($row['due_date']),
+            'completionDates' => $completionDates,
             'createdAt' => $this->toIsoString($row['created_at']) ?? '',
             'updatedAt' => $this->toIsoString($row['updated_at']) ?? '',
         ];
+    }
+
+    private function loadCompletionDates(array $taskIds, string $fromDate, string $toDate): array
+    {
+        if ($taskIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($taskIds), '?'));
+        $statement = $this->pdo->prepare(
+            sprintf(
+                'SELECT task_id, completed_on
+                 FROM task_completions
+                 WHERE task_id IN (%s) AND completed_on BETWEEN ? AND ?
+                 ORDER BY completed_on ASC',
+                $placeholders
+            )
+        );
+        $statement->execute([...$taskIds, $fromDate, $toDate]);
+
+        $completionDates = [];
+
+        foreach ($statement->fetchAll() as $row) {
+            $taskId = (int) $row['task_id'];
+            $completionDates[$taskId] ??= [];
+            $completionDates[$taskId][] = (string) $row['completed_on'];
+        }
+
+        return $completionDates;
     }
 
     private function toIsoString(?string $value): ?string
@@ -136,4 +196,3 @@ final class TaskRepository
         return (new DateTimeImmutable($value))->format(DATE_ATOM);
     }
 }
-

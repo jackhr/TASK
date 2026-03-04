@@ -1,7 +1,7 @@
-import type { Task, TaskPayload } from './types';
+import type { CompletionPayload, Task, TaskPayload, TrackerDashboard } from './types';
 
-type TaskListResponse = {
-  data: Task[];
+type DashboardResponse = {
+  data: TrackerDashboard;
 };
 
 type TaskResponse = {
@@ -53,8 +53,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const taskApi = {
-  async list(): Promise<Task[]> {
-    const response = await request<TaskListResponse>('/tasks');
+  async list(): Promise<TrackerDashboard> {
+    const response = await request<DashboardResponse>('/tasks');
     return response.data;
   },
 
@@ -79,5 +79,12 @@ export const taskApi = {
       method: 'DELETE',
     });
   },
-};
 
+  async setCompletion(id: number, payload: CompletionPayload): Promise<Task> {
+    const response = await request<TaskResponse>(`/tasks/${id}/completion`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return response.data;
+  },
+};

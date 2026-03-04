@@ -1,17 +1,15 @@
 import { useDeferredValue, useEffect, useState } from 'react';
 
 import { ApiError, taskApi } from './api';
+import { TaskBoard } from './components/TaskBoard';
 import { TaskForm } from './components/TaskForm';
-import { TaskList } from './components/TaskList';
-import type { Task, TaskFilter, TaskFormValues, TaskPayload } from './types';
+import { TaskHistory } from './components/TaskHistory';
+import type { Task, TaskFormValues, TaskPayload, TrackerDashboard } from './types';
 
 function toPayload(values: TaskFormValues): TaskPayload {
   return {
     title: values.title.trim(),
     description: values.description.trim(),
-    status: values.status,
-    priority: values.priority,
-    dueDate: values.dueDate.trim() === '' ? null : values.dueDate,
   };
 }
 
@@ -29,9 +27,15 @@ function getErrorMessage(error: unknown): string {
 }
 
 export default function App() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [dashboard, setDashboard] = useState<TrackerDashboard>({
+    tasks: [],
+    meta: {
+      today: '',
+      weekDates: [],
+      historyDates: [],
+    },
+  });
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
-  const [statusFilter, setStatusFilter] = useState<TaskFilter>('all');
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [error, setError] = useState<string | null>(null);
@@ -39,14 +43,14 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState<number | null>(null);
 
-  async function loadTasks() {
+  async function loadDashboard() {
     setIsLoading(true);
 
     try {
-      const nextTasks = await taskApi.list();
-      setTasks(nextTasks);
+      const nextDashboard = await taskApi.list();
+      setDashboard(nextDashboard);
       setSelectedTaskId((currentId) =>
-        nextTasks.some((task) => task.id === currentId) ? currentId : null,
+        nextDashboard.tasks.some((task) => task.id === currentId) ? currentId : null,
       );
       setError(null);
     } catch (requestError) {
@@ -57,17 +61,15 @@ export default function App() {
   }
 
   useEffect(() => {
-    void loadTasks();
+    void loadDashboard();
   }, []);
 
+  const tasks = dashboard.tasks;
+  const { historyDates, today, weekDates } = dashboard.meta;
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
 
   const normalizedSearch = deferredSearch.trim().toLowerCase();
   const visibleTasks = tasks.filter((task) => {
-    if (statusFilter !== 'all' && task.status !== statusFilter) {
-      return false;
-    }
-
     if (normalizedSearch === '') {
       return true;
     }
@@ -75,24 +77,33 @@ export default function App() {
     return `${task.title} ${task.description}`.toLowerCase().includes(normalizedSearch);
   });
 
-  const stats = tasks.reduce(
-    (summary, task) => {
-      summary.total += 1;
-      summary[task.status] += 1;
+  const doneToday = today === ''
+    ? 0
+    : tasks.reduce(
+        (count, task) => count + (task.completionDates.includes(today) ? 1 : 0),
+        0,
+      );
+  const totalHistoryChecks = tasks.reduce(
+    (count, task) =>
+      count +
+      historyDates.reduce(
+        (taskCount, date) => taskCount + (task.completionDates.includes(date) ? 1 : 0),
+        0,
+      ),
+    0,
+  );
+  const possibleHistoryChecks = tasks.length * historyDates.length;
+  const historyCompletionRate =
+    possibleHistoryChecks === 0 ? 0 : Math.round((totalHistoryChecks / possibleHistoryChecks) * 100);
 
-      if (task.priority === 'high') {
-        summary.highPriority += 1;
-      }
-
-      return summary;
-    },
-    {
-      total: 0,
-      todo: 0,
-      in_progress: 0,
-      done: 0,
-      highPriority: 0,
-    },
+  const weekCheckCount = tasks.reduce(
+    (count, task) =>
+      count +
+      weekDates.reduce(
+        (taskCount, date) => taskCount + (task.completionDates.includes(date) ? 1 : 0),
+        0,
+      ),
+    0,
   );
 
   async function handleSave(values: TaskFormValues) {
@@ -107,7 +118,7 @@ export default function App() {
         await taskApi.update(selectedTaskId, payload);
       }
 
-      await loadTasks();
+      await loadDashboard();
       setSelectedTaskId(null);
       setError(null);
     } catch (requestError) {
@@ -117,14 +128,19 @@ export default function App() {
     }
   }
 
-  async function handleToggleDone(task: Task) {
+  async function handleToggleCompletion(task: Task, completed: boolean) {
+    if (today === '') {
+      return;
+    }
+
     setBusyTaskId(task.id);
 
     try {
-      await taskApi.update(task.id, {
-        status: task.status === 'done' ? 'todo' : 'done',
+      await taskApi.setCompletion(task.id, {
+        date: today,
+        completed,
       });
-      await loadTasks();
+      await loadDashboard();
       setError(null);
     } catch (requestError) {
       setError(getErrorMessage(requestError));
@@ -147,7 +163,7 @@ export default function App() {
         setSelectedTaskId(null);
       }
 
-      await loadTasks();
+      await loadDashboard();
       setError(null);
     } catch (requestError) {
       setError(getErrorMessage(requestError));
@@ -159,83 +175,73 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="hero">
-        <div className="hero__copy">
-          <p className="eyebrow">Starter workspace</p>
-          <h1>Task management for a PHP + React deployment flow.</h1>
+        <div className="hero__copy hero__copy--lead">
+          <p className="eyebrow">Daily tracker</p>
+          <h1>Simple tasks, checked once per day.</h1>
           <p className="hero__lede">
-            This first pass focuses on a working stack: task CRUD, filtering, and a layout
-            you can reshape once you share the final UI direction.
+            Build a lightweight routine board: task names on the left, a weekly checkbox run on
+            the right, then a longer visual history underneath.
           </p>
-        </div>
-
-        <div className="hero__toolbar">
-          <label className="field field--search">
-            <span>Search</span>
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search title or description"
-            />
-          </label>
-
-          <div className="filter-strip" role="tablist" aria-label="Task status filters">
-            {(['all', 'todo', 'in_progress', 'done'] as const).map((filter) => (
-              <button
-                key={filter}
-                className={`filter-chip${statusFilter === filter ? ' filter-chip--active' : ''}`}
-                type="button"
-                onClick={() => setStatusFilter(filter)}
-              >
-                {filter === 'all'
-                  ? 'All'
-                  : filter === 'in_progress'
-                    ? 'In progress'
-                    : filter === 'todo'
-                      ? 'To do'
-                      : 'Done'}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="stats-grid">
           <article className="stat-card">
-            <span>Total</span>
-            <strong>{stats.total}</strong>
+            <span>Tasks</span>
+            <strong>{tasks.length}</strong>
           </article>
           <article className="stat-card">
-            <span>To do</span>
-            <strong>{stats.todo}</strong>
+            <span>Done today</span>
+            <strong>{doneToday}</strong>
           </article>
           <article className="stat-card">
-            <span>In progress</span>
-            <strong>{stats.in_progress}</strong>
+            <span>Week checks</span>
+            <strong>{weekCheckCount}</strong>
           </article>
           <article className="stat-card">
-            <span>High priority</span>
-            <strong>{stats.highPriority}</strong>
+            <span>Recent rate</span>
+            <strong>{historyCompletionRate}%</strong>
           </article>
+        </div>
+
+        <div className="hero__toolbar">
+          <div className="hero__copy hero__copy--search">
+            <label className="field field--search">
+              <span>Filter tasks</span>
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by task name or note"
+              />
+            </label>
+          </div>
+          <TaskForm
+            task={selectedTask}
+            isSaving={isSaving}
+            onCancel={() => setSelectedTaskId(null)}
+            onSubmit={handleSave}
+          />
         </div>
       </header>
 
       {error ? <div className="banner banner--error">{error}</div> : null}
 
       <main className="workspace">
-        <TaskForm
-          task={selectedTask}
-          isSaving={isSaving}
-          onCancel={() => setSelectedTaskId(null)}
-          onSubmit={handleSave}
-        />
-        <TaskList
+        <TaskBoard
           tasks={visibleTasks}
+          today={today}
+          weekDates={weekDates}
           selectedTaskId={selectedTaskId}
           busyTaskId={busyTaskId}
           isLoading={isLoading}
           onSelect={(task) => setSelectedTaskId(task.id)}
-          onToggleDone={handleToggleDone}
           onDelete={handleDelete}
+          onToggleCompletion={handleToggleCompletion}
+        />
+        <TaskHistory
+          tasks={visibleTasks}
+          historyDates={historyDates}
+          selectedTaskId={selectedTaskId}
         />
       </main>
     </div>

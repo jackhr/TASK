@@ -33,6 +33,7 @@ try {
                 'GET /api/tasks',
                 'POST /api/tasks',
                 'PATCH /api/tasks/{id}',
+                'PATCH /api/tasks/{id}/completion',
                 'DELETE /api/tasks/{id}',
             ],
         ]);
@@ -54,18 +55,22 @@ try {
     }
 
     $repository = new TaskRepository(Database::connection());
+    $today = currentDate();
+    $weekDates = buildDateRange(new DateTimeImmutable('monday this week'), 7);
+    $historyDates = buildDateRange((new DateTimeImmutable('today'))->modify('-27 days'), 28);
+    $completionWindowStart = min($weekDates[0], $historyDates[0]);
 
     if (count($segments) === 1) {
         if ($method === 'GET') {
-            $status = isset($_GET['status']) ? (string) $_GET['status'] : null;
-            $search = isset($_GET['search']) ? trim((string) $_GET['search']) : null;
-
-            if ($status !== null && $status !== '' && !in_array($status, TaskValidator::STATUSES, true)) {
-                JsonResponse::error('Invalid task status filter.', 422);
-            }
-
             JsonResponse::send([
-                'data' => $repository->getAll($status, $search),
+                'data' => [
+                    'tasks' => $repository->getAllWithCompletions($completionWindowStart, $today),
+                    'meta' => [
+                        'today' => $today,
+                        'weekDates' => $weekDates,
+                        'historyDates' => $historyDates,
+                    ],
+                ],
             ]);
         }
 
@@ -88,6 +93,34 @@ try {
 
     if ($taskId === false) {
         JsonResponse::error('Task id must be a number.', 422);
+    }
+
+    if (count($segments) === 3 && $segments[2] === 'completion') {
+        if ($method !== 'PATCH') {
+            JsonResponse::error('Method not allowed.', 405);
+        }
+
+        $payload = decodeJsonBody();
+
+        try {
+            $completion = TaskValidator::validateCompletion($payload);
+        } catch (InvalidArgumentException $exception) {
+            JsonResponse::error('Validation failed.', 422, decodeValidationErrors($exception));
+        }
+
+        if ($completion['date'] !== $today) {
+            JsonResponse::error('Only the current day can be updated.', 422, [
+                'date' => 'Only the current day can be updated.',
+            ]);
+        }
+
+        $task = $repository->setCompletion((int) $taskId, $completion['date'], $completion['completed']);
+
+        if ($task === null) {
+            JsonResponse::error('Task not found.', 404);
+        }
+
+        JsonResponse::send(['data' => $task]);
     }
 
     if ($method === 'PATCH') {
@@ -170,4 +203,20 @@ function decodeValidationErrors(InvalidArgumentException $exception): array
     $decoded = json_decode($exception->getMessage(), true);
 
     return is_array($decoded) ? $decoded : [];
+}
+
+function currentDate(): string
+{
+    return (new DateTimeImmutable('today'))->format('Y-m-d');
+}
+
+function buildDateRange(DateTimeImmutable $start, int $days): array
+{
+    $dates = [];
+
+    for ($offset = 0; $offset < $days; $offset += 1) {
+        $dates[] = $start->modify(sprintf('+%d days', $offset))->format('Y-m-d');
+    }
+
+    return $dates;
 }

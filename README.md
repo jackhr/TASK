@@ -1,6 +1,6 @@
 # Task Manager Starter
 
-This is a cPanel-friendly starter for a task manager with:
+This is a cPanel-friendly starter for a daily task tracker with:
 
 - PHP 8 backend
 - MySQL via PDO
@@ -70,19 +70,30 @@ If you must use `public_html/`:
 
 - `GET /api` overview
 - `GET /api/health` health check
-- `GET /api/tasks` list tasks
+- `GET /api/tasks` tracker dashboard data
 - `POST /api/tasks` create task
 - `PATCH /api/tasks/{id}` update task
+- `PATCH /api/tasks/{id}/completion` mark today's completion on or off
 - `DELETE /api/tasks/{id}` delete task
 
 ### Task payload
 
 ```json
 {
-  "title": "Finish hosting setup",
-  "description": "Point the addon domain to the public directory",
-  "status": "todo",
-  "priority": "high",
-  "dueDate": "2026-03-15T18:00"
+  "title": "Drink 2L water",
+  "description": "Spread it across the day"
 }
 ```
+
+### Completion payload
+
+```json
+{
+  "date": "2026-03-04",
+  "completed": true
+}
+```
+
+## Database update
+
+If you already imported the earlier schema, add the new `task_completions` table from `database/schema.sql` before running the updated app.
