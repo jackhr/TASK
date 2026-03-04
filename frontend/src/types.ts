@@ -25,7 +25,8 @@ export interface CompletionPayload {
 export interface TrackerMeta {
   today: string;
   weekDates: string[];
-  historyDates: string[];
+  yearDates: string[];
+  currentYear: string;
 }
 
 export interface TrackerDashboard {

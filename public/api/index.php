@@ -57,8 +57,10 @@ try {
     $repository = new TaskRepository(Database::connection());
     $today = currentDate();
     $weekDates = buildDateRange(new DateTimeImmutable('monday this week'), 7);
-    $historyDates = buildDateRange((new DateTimeImmutable('today'))->modify('-27 days'), 28);
-    $completionWindowStart = min($weekDates[0], $historyDates[0]);
+    $yearStart = new DateTimeImmutable('first day of january this year');
+    $yearEnd = new DateTimeImmutable('last day of december this year');
+    $yearDates = buildDateRangeBetween($yearStart, $yearEnd);
+    $completionWindowStart = min($weekDates[0], $yearDates[0]);
 
     if (count($segments) === 1) {
         if ($method === 'GET') {
@@ -68,7 +70,8 @@ try {
                     'meta' => [
                         'today' => $today,
                         'weekDates' => $weekDates,
-                        'historyDates' => $historyDates,
+                        'yearDates' => $yearDates,
+                        'currentYear' => $yearStart->format('Y'),
                     ],
                 ],
             ]);
@@ -216,6 +219,19 @@ function buildDateRange(DateTimeImmutable $start, int $days): array
 
     for ($offset = 0; $offset < $days; $offset += 1) {
         $dates[] = $start->modify(sprintf('+%d days', $offset))->format('Y-m-d');
+    }
+
+    return $dates;
+}
+
+function buildDateRangeBetween(DateTimeImmutable $start, DateTimeImmutable $end): array
+{
+    $dates = [];
+    $current = $start;
+
+    while ($current <= $end) {
+        $dates[] = $current->format('Y-m-d');
+        $current = $current->modify('+1 day');
     }
 
     return $dates;

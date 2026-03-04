@@ -481,6 +481,11 @@ button {
   background: var(--history-empty);
 }
 
+.history-dot--future {
+  background: rgba(212, 216, 210, 0.52);
+  border: 1px dashed rgba(93, 103, 87, 0.28);
+}
+
 .history-list {
   display: grid;
   gap: 16px;
@@ -536,25 +541,86 @@ button {
   font-size: 0.92rem;
 }
 
-.history-strip {
+.history-grid-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.contribution-chart {
+  width: max-content;
+  min-width: 100%;
+}
+
+.contribution-months {
+  display: flex;
+  gap: 4px;
+  align-items: end;
+  margin-bottom: 10px;
+  padding-left: 44px;
+}
+
+.contribution-months__spacer {
+  display: none;
+}
+
+.contribution-month {
+  width: 14px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.contribution-body {
+  display: flex;
+  gap: 10px;
+}
+
+.contribution-weekdays {
+  width: 34px;
   display: grid;
-  grid-template-columns: repeat(28, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-rows: repeat(7, 14px);
+  gap: 4px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  line-height: 14px;
 }
 
-.history-cell {
-  aspect-ratio: 1;
-  border-radius: 8px;
+.contribution-weeks {
+  display: flex;
+  gap: 4px;
+}
+
+.contribution-week {
+  display: grid;
+  grid-template-rows: repeat(7, 14px);
+  gap: 4px;
+}
+
+.contribution-cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
   display: block;
-  min-height: 18px;
+  background: var(--history-empty);
 }
 
-.history-cell--done {
+.contribution-cell--done {
   background: linear-gradient(145deg, var(--history-mid), var(--history-done));
 }
 
-.history-cell--missed {
+.contribution-cell--missed {
   background: var(--history-empty);
+}
+
+.contribution-cell--future {
+  background: rgba(212, 216, 210, 0.5);
+  border: 1px dashed rgba(93, 103, 87, 0.2);
+}
+
+.contribution-cell--pad {
+  background: transparent;
 }
 
 @media (max-width: 980px) {
@@ -598,9 +664,5 @@ button {
 
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .history-strip {
-    grid-template-columns: repeat(14, minmax(0, 1fr));
   }
 }

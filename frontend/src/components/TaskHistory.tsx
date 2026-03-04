@@ -1,24 +1,35 @@
-import { formatLongDate } from '../date';
+import { buildContributionWeeks, formatLongDate, isFutureDate } from '../date';
 import type { Task } from '../types';
 
 type TaskHistoryProps = {
   tasks: Task[];
-  historyDates: string[];
+  yearDates: string[];
+  today: string;
+  currentYear: string;
   selectedTaskId: number | null;
 };
 
-function countCompleted(historyDates: string[], completionDates: string[]): number {
+function countCompleted(dates: string[], completionDates: string[]): number {
   const completed = new Set(completionDates);
-  return historyDates.reduce((count, date) => count + (completed.has(date) ? 1 : 0), 0);
+  return dates.reduce((count, date) => count + (completed.has(date) ? 1 : 0), 0);
 }
 
-export function TaskHistory({ tasks, historyDates, selectedTaskId }: TaskHistoryProps) {
+export function TaskHistory({
+  tasks,
+  yearDates,
+  today,
+  currentYear,
+  selectedTaskId,
+}: TaskHistoryProps) {
+  const contributionWeeks = buildContributionWeeks(yearDates);
+  const elapsedDates = yearDates.filter((date) => date <= today);
+
   return (
     <section className="panel panel--history">
       <div className="panel__header panel__header--split">
         <div>
-          <p className="eyebrow">Completion history</p>
-          <h2>Each task gets its own recent streak strip.</h2>
+          <p className="eyebrow">Yearly history</p>
+          <h2>Each task gets a {currentYear} contribution grid.</h2>
         </div>
         <div className="history-legend">
           <span className="history-legend__item">
@@ -27,7 +38,11 @@ export function TaskHistory({ tasks, historyDates, selectedTaskId }: TaskHistory
           </span>
           <span className="history-legend__item">
             <i className="history-dot history-dot--missed" />
-            Missed
+            Not completed
+          </span>
+          <span className="history-legend__item">
+            <i className="history-dot history-dot--future" />
+            Future day
           </span>
         </div>
       </div>
@@ -38,8 +53,9 @@ export function TaskHistory({ tasks, historyDates, selectedTaskId }: TaskHistory
         <div className="history-list">
           {tasks.map((task) => {
             const completedDates = new Set(task.completionDates);
-            const doneCount = countCompleted(historyDates, task.completionDates);
-            const ratio = historyDates.length === 0 ? 0 : Math.round((doneCount / historyDates.length) * 100);
+            const doneCount = countCompleted(elapsedDates, task.completionDates);
+            const ratio =
+              elapsedDates.length === 0 ? 0 : Math.round((doneCount / elapsedDates.length) * 100);
 
             return (
               <article
@@ -53,20 +69,69 @@ export function TaskHistory({ tasks, historyDates, selectedTaskId }: TaskHistory
                   </div>
                   <div className="history-row__stats">
                     <strong>{doneCount}</strong>
-                    <span>{ratio}% of recent days</span>
+                    <span>{ratio}% of days so far</span>
                   </div>
                 </div>
 
-                <div className="history-strip" aria-label={`${task.title} recent completion history`}>
-                  {historyDates.map((date) => (
-                    <span
-                      key={date}
-                      className={`history-cell${
-                        completedDates.has(date) ? ' history-cell--done' : ' history-cell--missed'
-                      }`}
-                      title={`${formatLongDate(date)}: ${completedDates.has(date) ? 'completed' : 'missed'}`}
-                    />
-                  ))}
+                <div className="history-grid-scroll">
+                  <div className="contribution-chart" aria-label={`${task.title} yearly completion history`}>
+                    <div className="contribution-months">
+                      <span className="contribution-months__spacer" />
+                      {contributionWeeks.map((week, index) => (
+                        <span className="contribution-month" key={`${task.id}-month-${index}`}>
+                          {week.label}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="contribution-body">
+                      <div className="contribution-weekdays" aria-hidden="true">
+                        <span />
+                        <span>Mon</span>
+                        <span />
+                        <span>Wed</span>
+                        <span />
+                        <span>Fri</span>
+                        <span />
+                      </div>
+
+                      <div className="contribution-weeks">
+                        {contributionWeeks.map((week, weekIndex) => (
+                          <div className="contribution-week" key={`${task.id}-week-${weekIndex}`}>
+                            {week.dates.map((date, dayIndex) => {
+                              if (date === null) {
+                                return (
+                                  <span
+                                    className="contribution-cell contribution-cell--pad"
+                                    key={`${task.id}-pad-${weekIndex}-${dayIndex}`}
+                                  />
+                                );
+                              }
+
+                              const completed = completedDates.has(date);
+                              const future = isFutureDate(date, today);
+
+                              return (
+                                <span
+                                  key={date}
+                                  className={`contribution-cell${
+                                    completed
+                                      ? ' contribution-cell--done'
+                                      : future
+                                        ? ' contribution-cell--future'
+                                        : ' contribution-cell--missed'
+                                  }`}
+                                  title={`${formatLongDate(date)}: ${
+                                    completed ? 'completed' : future ? 'future day' : 'not completed'
+                                  }`}
+                                />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </article>
             );
@@ -76,4 +141,3 @@ export function TaskHistory({ tasks, historyDates, selectedTaskId }: TaskHistory
     </section>
   );
 }
-

@@ -32,7 +32,8 @@ export default function App() {
     meta: {
       today: '',
       weekDates: [],
-      historyDates: [],
+      yearDates: [],
+      currentYear: '',
     },
   });
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
@@ -65,7 +66,7 @@ export default function App() {
   }, []);
 
   const tasks = dashboard.tasks;
-  const { historyDates, today, weekDates } = dashboard.meta;
+  const { currentYear, today, weekDates, yearDates } = dashboard.meta;
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
 
   const normalizedSearch = deferredSearch.trim().toLowerCase();
@@ -83,16 +84,17 @@ export default function App() {
         (count, task) => count + (task.completionDates.includes(today) ? 1 : 0),
         0,
       );
+  const elapsedYearDates = yearDates.filter((date) => date <= today);
   const totalHistoryChecks = tasks.reduce(
     (count, task) =>
       count +
-      historyDates.reduce(
+      elapsedYearDates.reduce(
         (taskCount, date) => taskCount + (task.completionDates.includes(date) ? 1 : 0),
         0,
       ),
     0,
   );
-  const possibleHistoryChecks = tasks.length * historyDates.length;
+  const possibleHistoryChecks = tasks.length * elapsedYearDates.length;
   const historyCompletionRate =
     possibleHistoryChecks === 0 ? 0 : Math.round((totalHistoryChecks / possibleHistoryChecks) * 100);
 
@@ -198,7 +200,7 @@ export default function App() {
             <strong>{weekCheckCount}</strong>
           </article>
           <article className="stat-card">
-            <span>Recent rate</span>
+            <span>{currentYear || 'Year'} rate</span>
             <strong>{historyCompletionRate}%</strong>
           </article>
         </div>
@@ -240,7 +242,9 @@ export default function App() {
         />
         <TaskHistory
           tasks={visibleTasks}
-          historyDates={historyDates}
+          yearDates={yearDates}
+          today={today}
+          currentYear={currentYear}
           selectedTaskId={selectedTaskId}
         />
       </main>
