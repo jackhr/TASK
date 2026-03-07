@@ -1,9 +1,12 @@
 import type {
   CompletionPayload,
+  LoginPayload,
   MetricsDashboard,
+  RegisterPayload,
   Task,
   TaskPayload,
   TrackerDashboard,
+  User,
 } from './types';
 
 type DashboardResponse = {
@@ -18,6 +21,10 @@ type TaskResponse = {
   data: Task;
 };
 
+type UserResponse = {
+  data: User;
+};
+
 type ApiErrorResponse = {
   error?: {
     message?: string;
@@ -29,6 +36,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public readonly details: Record<string, string> = {},
+    public readonly status: number = 500,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -39,6 +47,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? '/api';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
@@ -56,11 +65,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(
       data.error?.message ?? 'The request failed.',
       data.error?.details ?? {},
+      response.status,
     );
   }
 
   return data as T;
 }
+
+export const authApi = {
+  async me(): Promise<User> {
+    const response = await request<UserResponse>('/auth/me');
+    return response.data;
+  },
+
+  async register(payload: RegisterPayload): Promise<User> {
+    const response = await request<UserResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return response.data;
+  },
+
+  async login(payload: LoginPayload): Promise<User> {
+    const response = await request<UserResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return response.data;
+  },
+
+  async logout(): Promise<void> {
+    await request<void>('/auth/logout', {
+      method: 'POST',
+    });
+  },
+};
 
 export const taskApi = {
   async list(): Promise<TrackerDashboard> {

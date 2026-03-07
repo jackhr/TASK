@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/server/bootstrap.php';
+require_once dirname(__DIR__, 2) . '/server/AuthValidator.php';
 require_once dirname(__DIR__, 2) . '/server/Database.php';
 require_once dirname(__DIR__, 2) . '/server/JsonResponse.php';
 require_once dirname(__DIR__, 2) . '/server/TaskRepository.php';
 require_once dirname(__DIR__, 2) . '/server/TaskValidator.php';
+require_once dirname(__DIR__, 2) . '/server/UserRepository.php';
 
 handleCors();
 
@@ -15,11 +17,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
     exit;
 }
 
+startSession();
+
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $route = trim((string) ($_GET['route'] ?? ''), '/');
 $segments = $route === '' ? [] : explode('/', $route);
 
 try {
+    $pdo = Database::connection();
+    $repository = new TaskRepository($pdo);
+    $userRepository = new UserRepository($pdo);
+
     if ($segments === []) {
         if ($method !== 'GET') {
             JsonResponse::error('Method not allowed.', 405);
@@ -30,6 +38,10 @@ try {
             'version' => '1.0.0',
             'endpoints' => [
                 'GET /api/health',
+                'GET /api/auth/me',
+                'POST /api/auth/register',
+                'POST /api/auth/login',
+                'POST /api/auth/logout',
                 'GET /api/tasks',
                 'GET /api/metrics',
                 'POST /api/tasks',
@@ -51,7 +63,16 @@ try {
         ]);
     }
 
-    $repository = new TaskRepository(Database::connection());
+    if ($segments[0] === 'auth') {
+        handleAuthRoutes($segments, $method, $userRepository);
+    }
+
+    if ($segments[0] !== 'tasks' && $segments[0] !== 'metrics') {
+        JsonResponse::error('Endpoint not found.', 404);
+    }
+
+    $userId = requireUserId($userRepository);
+
     $today = currentDate();
     $weekDates = buildDateRange(new DateTimeImmutable('monday this week'), 7);
     $yearStart = new DateTimeImmutable('first day of january this year');
@@ -64,22 +85,18 @@ try {
             JsonResponse::error('Method not allowed.', 405);
         }
 
-        $tasks = $repository->getAllWithCompletions($completionWindowStart, $today);
+        $tasks = $repository->getAllWithCompletions($userId, $completionWindowStart, $today);
 
         JsonResponse::send([
             'data' => buildMetricsPayload($tasks, $weekDates, $yearDates, $today, $yearStart->format('Y')),
         ]);
     }
 
-    if ($segments[0] !== 'tasks') {
-        JsonResponse::error('Endpoint not found.', 404);
-    }
-
     if (count($segments) === 1) {
         if ($method === 'GET') {
             JsonResponse::send([
                 'data' => [
-                    'tasks' => $repository->getAllWithCompletions($completionWindowStart, $today),
+                    'tasks' => $repository->getAllWithCompletions($userId, $completionWindowStart, $today),
                     'meta' => [
                         'today' => $today,
                         'weekDates' => $weekDates,
@@ -94,7 +111,7 @@ try {
             $payload = decodeJsonBody();
 
             try {
-                $task = $repository->create(TaskValidator::validateForCreate($payload));
+                $task = $repository->create($userId, TaskValidator::validateForCreate($payload));
             } catch (InvalidArgumentException $exception) {
                 JsonResponse::error('Validation failed.', 422, decodeValidationErrors($exception));
             }
@@ -130,7 +147,7 @@ try {
             ]);
         }
 
-        $task = $repository->setCompletion((int) $taskId, $completion['date'], $completion['completed']);
+        $task = $repository->setCompletion($userId, (int) $taskId, $completion['date'], $completion['completed']);
 
         if ($task === null) {
             JsonResponse::error('Task not found.', 404);
@@ -143,7 +160,7 @@ try {
         $payload = decodeJsonBody();
 
         try {
-            $task = $repository->update((int) $taskId, TaskValidator::validateForUpdate($payload));
+            $task = $repository->update($userId, (int) $taskId, TaskValidator::validateForUpdate($payload));
         } catch (InvalidArgumentException $exception) {
             JsonResponse::error('Validation failed.', 422, decodeValidationErrors($exception));
         }
@@ -156,7 +173,7 @@ try {
     }
 
     if ($method === 'DELETE') {
-        if (!$repository->delete((int) $taskId)) {
+        if (!$repository->delete($userId, (int) $taskId)) {
             JsonResponse::error('Task not found.', 404);
         }
 
@@ -164,7 +181,7 @@ try {
     }
 
     if ($method === 'GET') {
-        $task = $repository->find((int) $taskId);
+        $task = $repository->find($userId, (int) $taskId);
 
         if ($task === null) {
             JsonResponse::error('Task not found.', 404);
@@ -183,6 +200,7 @@ function handleCors(): void
 {
     header('Access-Control-Allow-Headers: Content-Type');
     header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
+    header('Access-Control-Allow-Credentials: true');
 
     $allowedOrigins = array_filter(array_map('trim', explode(',', Config::get('ALLOWED_ORIGINS', '') ?? '')));
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
@@ -191,6 +209,189 @@ function handleCors(): void
         header('Access-Control-Allow-Origin: ' . $origin);
         header('Vary: Origin');
     }
+}
+
+function startSession(): void
+{
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        return;
+    }
+
+    $sessionName = Config::get('SESSION_NAME', 'task_manager_session') ?? 'task_manager_session';
+    $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (string) ($_SERVER['SERVER_PORT'] ?? '') === '443';
+
+    session_name($sessionName);
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => $isSecure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    session_start();
+}
+
+function currentUserId(): ?int
+{
+    $value = $_SESSION['user_id'] ?? null;
+    $userId = filter_var($value, FILTER_VALIDATE_INT);
+
+    if ($userId === false || $userId <= 0) {
+        return null;
+    }
+
+    return (int) $userId;
+}
+
+function loginUser(int $userId): void
+{
+    session_regenerate_id(true);
+    $_SESSION['user_id'] = $userId;
+}
+
+function logoutUser(): void
+{
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(),
+            '',
+            [
+                'expires' => time() - 42000,
+                'path' => $params['path'] ?? '/',
+                'domain' => $params['domain'] ?? '',
+                'secure' => (bool) ($params['secure'] ?? false),
+                'httponly' => (bool) ($params['httponly'] ?? true),
+                'samesite' => $params['samesite'] ?? 'Lax',
+            ]
+        );
+    }
+
+    session_destroy();
+}
+
+function requireUserId(UserRepository $users): int
+{
+    $userId = currentUserId();
+
+    if ($userId === null) {
+        JsonResponse::error('Authentication required.', 401);
+    }
+
+    if ($users->findById($userId) === null) {
+        logoutUser();
+        JsonResponse::error('Authentication required.', 401);
+    }
+
+    return $userId;
+}
+
+function handleAuthRoutes(array $segments, string $method, UserRepository $users): void
+{
+    if (count($segments) !== 2) {
+        JsonResponse::error('Endpoint not found.', 404);
+    }
+
+    $route = $segments[1];
+
+    if ($route === 'register') {
+        if ($method !== 'POST') {
+            JsonResponse::error('Method not allowed.', 405);
+        }
+
+        $payload = decodeJsonBody();
+
+        try {
+            $registration = AuthValidator::validateRegistration($payload);
+        } catch (InvalidArgumentException $exception) {
+            JsonResponse::error('Validation failed.', 422, decodeValidationErrors($exception));
+        }
+
+        if ($users->emailExists($registration['email'])) {
+            JsonResponse::error('Validation failed.', 422, [
+                'email' => 'An account with this email already exists.',
+            ]);
+        }
+
+        $passwordHash = password_hash($registration['password'], PASSWORD_DEFAULT);
+
+        if (!is_string($passwordHash) || $passwordHash === '') {
+            throw new RuntimeException('Unable to process password.');
+        }
+
+        $user = $users->create([
+            'name' => $registration['name'],
+            'email' => $registration['email'],
+            'passwordHash' => $passwordHash,
+        ]);
+
+        loginUser((int) $user['id']);
+
+        JsonResponse::send(['data' => $user], 201);
+    }
+
+    if ($route === 'login') {
+        if ($method !== 'POST') {
+            JsonResponse::error('Method not allowed.', 405);
+        }
+
+        $payload = decodeJsonBody();
+
+        try {
+            $credentials = AuthValidator::validateLogin($payload);
+        } catch (InvalidArgumentException $exception) {
+            JsonResponse::error('Validation failed.', 422, decodeValidationErrors($exception));
+        }
+
+        $user = $users->findAuthByEmail($credentials['email']);
+
+        if ($user === null || !password_verify($credentials['password'], (string) $user['passwordHash'])) {
+            JsonResponse::error('Invalid credentials.', 401);
+        }
+
+        loginUser((int) $user['id']);
+        $publicUser = $users->findById((int) $user['id']);
+
+        if ($publicUser === null) {
+            throw new RuntimeException('Unable to load account.');
+        }
+
+        JsonResponse::send(['data' => $publicUser]);
+    }
+
+    if ($route === 'logout') {
+        if ($method !== 'POST') {
+            JsonResponse::error('Method not allowed.', 405);
+        }
+
+        logoutUser();
+        JsonResponse::noContent();
+    }
+
+    if ($route === 'me') {
+        if ($method !== 'GET') {
+            JsonResponse::error('Method not allowed.', 405);
+        }
+
+        $userId = currentUserId();
+
+        if ($userId === null) {
+            JsonResponse::error('Authentication required.', 401);
+        }
+
+        $user = $users->findById($userId);
+
+        if ($user === null) {
+            logoutUser();
+            JsonResponse::error('Authentication required.', 401);
+        }
+
+        JsonResponse::send(['data' => $user]);
+    }
+
+    JsonResponse::error('Endpoint not found.', 404);
 }
 
 function decodeJsonBody(): array

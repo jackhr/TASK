@@ -8,11 +8,15 @@ final class TaskRepository
     {
     }
 
-    public function getAllWithCompletions(string $fromDate, string $toDate): array
+    public function getAllWithCompletions(int $userId, string $fromDate, string $toDate): array
     {
-        $statement = $this->pdo->query(
-            'SELECT id, title, description, created_at, updated_at FROM tasks ORDER BY created_at ASC, title ASC'
+        $statement = $this->pdo->prepare(
+            'SELECT id, title, description, created_at, updated_at
+             FROM tasks
+             WHERE user_id = :user_id
+             ORDER BY created_at ASC, title ASC'
         );
+        $statement->execute(['user_id' => $userId]);
         $tasks = [];
 
         foreach ($statement->fetchAll() as $row) {
@@ -33,12 +37,18 @@ final class TaskRepository
         return array_values($tasks);
     }
 
-    public function find(int $id, ?string $fromDate = null, ?string $toDate = null): ?array
+    public function find(int $userId, int $id, ?string $fromDate = null, ?string $toDate = null): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT id, title, description, created_at, updated_at FROM tasks WHERE id = :id LIMIT 1'
+            'SELECT id, title, description, created_at, updated_at
+             FROM tasks
+             WHERE id = :id AND user_id = :user_id
+             LIMIT 1'
         );
-        $statement->execute(['id' => $id]);
+        $statement->execute([
+            'id' => $id,
+            'user_id' => $userId,
+        ]);
         $task = $statement->fetch();
 
         if (!is_array($task)) {
@@ -54,23 +64,25 @@ final class TaskRepository
         return $this->mapTask($task, $completionDates);
     }
 
-    public function create(array $data): array
+    public function create(int $userId, array $data): array
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO tasks (title, description) VALUES (:title, :description)'
+            'INSERT INTO tasks (user_id, title, description) VALUES (:user_id, :title, :description)'
         );
         $statement->execute([
+            'user_id' => $userId,
             'title' => $data['title'],
             'description' => $data['description'],
         ]);
 
-        return $this->find((int) $this->pdo->lastInsertId()) ?? throw new RuntimeException('Task was created but could not be reloaded.');
+        return $this->find($userId, (int) $this->pdo->lastInsertId()) ??
+            throw new RuntimeException('Task was created but could not be reloaded.');
     }
 
-    public function update(int $id, array $data): ?array
+    public function update(int $userId, int $id, array $data): ?array
     {
         if ($data === []) {
-            return $this->find($id);
+            return $this->find($userId, $id);
         }
 
         $assignments = [];
@@ -84,27 +96,39 @@ final class TaskRepository
         $assignments[] = 'updated_at = CURRENT_TIMESTAMP';
 
         $statement = $this->pdo->prepare(
-            sprintf('UPDATE tasks SET %s WHERE id = :id', implode(', ', $assignments))
+            sprintf('UPDATE tasks SET %s WHERE id = :id AND user_id = :user_id', implode(', ', $assignments))
         );
+        $params['user_id'] = $userId;
         $statement->execute($params);
 
-        if ($statement->rowCount() === 0 && $this->find($id) === null) {
+        if ($statement->rowCount() === 0 && $this->find($userId, $id) === null) {
             return null;
         }
 
-        return $this->find($id);
+        return $this->find($userId, $id);
     }
 
-    public function delete(int $id): bool
+    public function delete(int $userId, int $id): bool
     {
         $this->pdo->beginTransaction();
 
         try {
-            $completionStatement = $this->pdo->prepare('DELETE FROM task_completions WHERE task_id = :id');
-            $completionStatement->execute(['id' => $id]);
+            $completionStatement = $this->pdo->prepare(
+                'DELETE task_completions
+                 FROM task_completions
+                 INNER JOIN tasks ON tasks.id = task_completions.task_id
+                 WHERE tasks.id = :id AND tasks.user_id = :user_id'
+            );
+            $completionStatement->execute([
+                'id' => $id,
+                'user_id' => $userId,
+            ]);
 
-            $taskStatement = $this->pdo->prepare('DELETE FROM tasks WHERE id = :id');
-            $taskStatement->execute(['id' => $id]);
+            $taskStatement = $this->pdo->prepare('DELETE FROM tasks WHERE id = :id AND user_id = :user_id');
+            $taskStatement->execute([
+                'id' => $id,
+                'user_id' => $userId,
+            ]);
 
             $this->pdo->commit();
 
@@ -118,9 +142,9 @@ final class TaskRepository
         }
     }
 
-    public function setCompletion(int $taskId, string $date, bool $completed): ?array
+    public function setCompletion(int $userId, int $taskId, string $date, bool $completed): ?array
     {
-        if ($this->find($taskId) === null) {
+        if ($this->find($userId, $taskId) === null) {
             return null;
         }
 
@@ -143,7 +167,7 @@ final class TaskRepository
             ]);
         }
 
-        return $this->find($taskId, $date, $date);
+        return $this->find($userId, $taskId, $date, $date);
     }
 
     private function mapTask(array $row, array $completionDates): array

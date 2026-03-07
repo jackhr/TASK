@@ -22,6 +22,23 @@ export interface CompletionPayload {
   completed: boolean;
 }
 
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface RegisterPayload extends LoginPayload {
+  name: string;
+}
+
 export interface TrackerMeta {
   today: string;
   weekDates: string[];

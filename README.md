@@ -5,6 +5,7 @@ This is a cPanel-friendly starter for a daily task tracker with:
 - PHP 8 backend
 - MySQL via PDO
 - React + TypeScript frontend built with Vite
+- Session-based authentication with per-user task isolation
 
 The frontend is meant to be built locally and deployed as static files. The PHP API runs directly on shared hosting.
 
@@ -70,6 +71,10 @@ If you must use `public_html/`:
 
 - `GET /api` overview
 - `GET /api/health` health check
+- `GET /api/auth/me` get current authenticated user
+- `POST /api/auth/register` register a user and start a session
+- `POST /api/auth/login` login and start a session
+- `POST /api/auth/logout` clear the session
 - `GET /api/tasks` tracker dashboard data
 - `POST /api/tasks` create task
 - `PATCH /api/tasks/{id}` update task
@@ -94,6 +99,31 @@ If you must use `public_html/`:
 }
 ```
 
+### Auth payloads
+
+Registration:
+
+```json
+{
+  "name": "Jane Doe",
+  "email": "jane@example.com",
+  "password": "strongpass123"
+}
+```
+
+Login:
+
+```json
+{
+  "email": "jane@example.com",
+  "password": "strongpass123"
+}
+```
+
 ## Database update
 
-If you already imported the earlier schema, add the new `task_completions` table from `database/schema.sql` before running the updated app.
+If you already imported an older schema, re-import `database/schema.sql` or migrate your DB so it includes:
+
+- `users` table
+- `tasks.user_id` foreign key to `users.id`
+- `task_completions` foreign key to `tasks.id`
