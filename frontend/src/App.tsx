@@ -5,13 +5,29 @@ import { MetricsPanel } from './components/MetricsPanel';
 import { TaskBoard } from './components/TaskBoard';
 import { TaskForm } from './components/TaskForm';
 import { TaskHistory } from './components/TaskHistory';
-import type { Task, TaskFormValues, TaskPayload, TrackerDashboard } from './types';
+import type {
+  MetricsDashboard,
+  Task,
+  TaskFormValues,
+  TaskPayload,
+  TrackerDashboard,
+} from './types';
 
 function toPayload(values: TaskFormValues): TaskPayload {
   return {
     title: values.title.trim(),
     description: values.description.trim(),
   };
+}
+
+type AppPage = 'tracker' | 'metrics';
+
+function pageFromPath(pathname: string): AppPage {
+  return pathname === '/metrics' || pathname.startsWith('/metrics/') ? 'metrics' : 'tracker';
+}
+
+function pathFromPage(page: AppPage): string {
+  return page === 'metrics' ? '/metrics' : '/';
 }
 
 function getErrorMessage(error: unknown): string {
@@ -28,6 +44,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 export default function App() {
+  const [page, setPage] = useState<AppPage>(() => pageFromPath(window.location.pathname));
   const [dashboard, setDashboard] = useState<TrackerDashboard>({
     tasks: [],
     meta: {
@@ -37,11 +54,13 @@ export default function App() {
       currentYear: '',
     },
   });
+  const [metrics, setMetrics] = useState<MetricsDashboard | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMetricsLoading, setIsMetricsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState<number | null>(null);
 
@@ -62,9 +81,50 @@ export default function App() {
     }
   }
 
+  async function loadMetrics() {
+    setIsMetricsLoading(true);
+
+    try {
+      const nextMetrics = await taskApi.metrics();
+      setMetrics(nextMetrics);
+      setError(null);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setIsMetricsLoading(false);
+    }
+  }
+
   useEffect(() => {
-    void loadDashboard();
+    const handlePopState = () => {
+      setPage(pageFromPath(window.location.pathname));
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
+
+  useEffect(() => {
+    if (page === 'tracker') {
+      void loadDashboard();
+    } else {
+      void loadMetrics();
+    }
+  }, [page]);
+
+  function navigateToPage(nextPage: AppPage) {
+    if (nextPage === page) {
+      return;
+    }
+
+    const nextPath = pathFromPage(nextPage);
+    window.history.pushState({}, '', nextPath);
+    setPage(nextPage);
+    setError(null);
+  }
 
   const tasks = dashboard.tasks;
   const { currentYear, today, weekDates, yearDates } = dashboard.meta;
@@ -152,60 +212,81 @@ export default function App() {
           <p className="eyebrow">Daily tracker</p>
           <h1>Simple tasks, tighter layout, clearer metrics.</h1>
           <p className="hero__lede">
-            A spreadsheet-inspired tracker with a compact weekly board, a metrics section, and a
+            A spreadsheet-inspired tracker with a compact weekly board, separate metrics page, and
             full-year contribution history for each habit.
           </p>
         </div>
 
-        <div className="hero__toolbar">
-          <div className="hero__copy hero__copy--search">
-            <label className="field field--search">
-              <span>Filter tasks</span>
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by task name or note"
-              />
-            </label>
+        <nav className="page-nav" aria-label="Page navigation">
+          <button
+            className={`page-nav__button${page === 'tracker' ? ' page-nav__button--active' : ''}`}
+            onClick={() => navigateToPage('tracker')}
+            type="button"
+          >
+            Tracker
+          </button>
+          <button
+            className={`page-nav__button${page === 'metrics' ? ' page-nav__button--active' : ''}`}
+            onClick={() => navigateToPage('metrics')}
+            type="button"
+          >
+            Metrics
+          </button>
+        </nav>
+
+        {page === 'tracker' ? (
+          <div className="hero__toolbar">
+            <div className="hero__copy hero__copy--search">
+              <label className="field field--search">
+                <span>Filter tasks</span>
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search by task name or note"
+                />
+              </label>
+            </div>
+            <TaskForm
+              task={selectedTask}
+              isSaving={isSaving}
+              onCancel={() => setSelectedTaskId(null)}
+              onSubmit={handleSave}
+            />
           </div>
-          <TaskForm
-            task={selectedTask}
-            isSaving={isSaving}
-            onCancel={() => setSelectedTaskId(null)}
-            onSubmit={handleSave}
-          />
-        </div>
+        ) : null}
       </header>
 
       {error ? <div className="banner banner--error">{error}</div> : null}
 
       <main className="workspace">
-        <MetricsPanel
-          tasks={visibleTasks}
-          today={today}
-          weekDates={weekDates}
-          yearDates={yearDates}
-          currentYear={currentYear}
-        />
-        <TaskBoard
-          tasks={visibleTasks}
-          today={today}
-          weekDates={weekDates}
-          selectedTaskId={selectedTaskId}
-          busyTaskId={busyTaskId}
-          isLoading={isLoading}
-          onSelect={(task) => setSelectedTaskId(task.id)}
-          onDelete={handleDelete}
-          onToggleCompletion={handleToggleCompletion}
-        />
-        <TaskHistory
-          tasks={visibleTasks}
-          yearDates={yearDates}
-          today={today}
-          currentYear={currentYear}
-          selectedTaskId={selectedTaskId}
-        />
+        {page === 'tracker' ? (
+          <>
+            <TaskBoard
+              tasks={visibleTasks}
+              today={today}
+              weekDates={weekDates}
+              selectedTaskId={selectedTaskId}
+              busyTaskId={busyTaskId}
+              isLoading={isLoading}
+              onSelect={(task) => setSelectedTaskId(task.id)}
+              onDelete={handleDelete}
+              onToggleCompletion={handleToggleCompletion}
+            />
+            <TaskHistory
+              tasks={visibleTasks}
+              yearDates={yearDates}
+              today={today}
+              currentYear={currentYear}
+              selectedTaskId={selectedTaskId}
+            />
+          </>
+        ) : (
+          <MetricsPanel
+            metrics={metrics}
+            isLoading={isMetricsLoading}
+          />
+        )}
       </main>
     </div>
   );

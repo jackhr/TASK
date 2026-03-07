@@ -123,6 +123,32 @@ button {
   align-items: stretch;
 }
 
+.page-nav {
+  display: inline-flex;
+  gap: 6px;
+  width: fit-content;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(27, 30, 25, 0.1);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.page-nav__button {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 13px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.page-nav__button--active {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
+  color: white;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   font-family: 'IBM Plex Mono', monospace;

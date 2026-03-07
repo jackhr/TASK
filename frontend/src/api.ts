@@ -1,7 +1,17 @@
-import type { CompletionPayload, Task, TaskPayload, TrackerDashboard } from './types';
+import type {
+  CompletionPayload,
+  MetricsDashboard,
+  Task,
+  TaskPayload,
+  TrackerDashboard,
+} from './types';
 
 type DashboardResponse = {
   data: TrackerDashboard;
+};
+
+type MetricsResponse = {
+  data: MetricsDashboard;
 };
 
 type TaskResponse = {
@@ -55,6 +65,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const taskApi = {
   async list(): Promise<TrackerDashboard> {
     const response = await request<DashboardResponse>('/tasks');
+    return response.data;
+  },
+
+  async metrics(): Promise<MetricsDashboard> {
+    const response = await request<MetricsResponse>('/metrics');
     return response.data;
   },
 
