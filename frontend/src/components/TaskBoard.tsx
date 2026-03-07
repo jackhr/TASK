@@ -29,10 +29,10 @@ export function TaskBoard({
       <div className="panel__header panel__header--split">
         <div>
           <p className="eyebrow">Weekly board</p>
-          <h2>Check off today, scan the rest of the week.</h2>
+          <h2>Task list left, daily checks right.</h2>
         </div>
         <p className="panel__note">
-          Only today is editable. Past and future days stay visible for context.
+          Today is the only editable column. The rest stay visible for pattern tracking.
         </p>
       </div>
 
@@ -139,4 +139,3 @@ export function TaskBoard({
     </section>
   );
 }
-

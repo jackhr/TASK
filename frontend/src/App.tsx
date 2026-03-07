@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useState } from 'react';
 
 import { ApiError, taskApi } from './api';
+import { MetricsPanel } from './components/MetricsPanel';
 import { TaskBoard } from './components/TaskBoard';
 import { TaskForm } from './components/TaskForm';
 import { TaskHistory } from './components/TaskHistory';
@@ -78,36 +79,6 @@ export default function App() {
     return `${task.title} ${task.description}`.toLowerCase().includes(normalizedSearch);
   });
 
-  const doneToday = today === ''
-    ? 0
-    : tasks.reduce(
-        (count, task) => count + (task.completionDates.includes(today) ? 1 : 0),
-        0,
-      );
-  const elapsedYearDates = yearDates.filter((date) => date <= today);
-  const totalHistoryChecks = tasks.reduce(
-    (count, task) =>
-      count +
-      elapsedYearDates.reduce(
-        (taskCount, date) => taskCount + (task.completionDates.includes(date) ? 1 : 0),
-        0,
-      ),
-    0,
-  );
-  const possibleHistoryChecks = tasks.length * elapsedYearDates.length;
-  const historyCompletionRate =
-    possibleHistoryChecks === 0 ? 0 : Math.round((totalHistoryChecks / possibleHistoryChecks) * 100);
-
-  const weekCheckCount = tasks.reduce(
-    (count, task) =>
-      count +
-      weekDates.reduce(
-        (taskCount, date) => taskCount + (task.completionDates.includes(date) ? 1 : 0),
-        0,
-      ),
-    0,
-  );
-
   async function handleSave(values: TaskFormValues) {
     setIsSaving(true);
 
@@ -179,30 +150,11 @@ export default function App() {
       <header className="hero">
         <div className="hero__copy hero__copy--lead">
           <p className="eyebrow">Daily tracker</p>
-          <h1>Simple tasks, checked once per day.</h1>
+          <h1>Simple tasks, tighter layout, clearer metrics.</h1>
           <p className="hero__lede">
-            Build a lightweight routine board: task names on the left, a weekly checkbox run on
-            the right, then a longer visual history underneath.
+            A spreadsheet-inspired tracker with a compact weekly board, a metrics section, and a
+            full-year contribution history for each habit.
           </p>
-        </div>
-
-        <div className="stats-grid">
-          <article className="stat-card">
-            <span>Tasks</span>
-            <strong>{tasks.length}</strong>
-          </article>
-          <article className="stat-card">
-            <span>Done today</span>
-            <strong>{doneToday}</strong>
-          </article>
-          <article className="stat-card">
-            <span>Week checks</span>
-            <strong>{weekCheckCount}</strong>
-          </article>
-          <article className="stat-card">
-            <span>{currentYear || 'Year'} rate</span>
-            <strong>{historyCompletionRate}%</strong>
-          </article>
         </div>
 
         <div className="hero__toolbar">
@@ -229,6 +181,13 @@ export default function App() {
       {error ? <div className="banner banner--error">{error}</div> : null}
 
       <main className="workspace">
+        <MetricsPanel
+          tasks={visibleTasks}
+          today={today}
+          weekDates={weekDates}
+          yearDates={yearDates}
+          currentYear={currentYear}
+        />
         <TaskBoard
           tasks={visibleTasks}
           today={today}

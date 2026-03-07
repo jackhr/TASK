@@ -51,7 +51,7 @@ export function TaskForm({ task, isSaving, onCancel, onSubmit }: TaskFormProps) 
     <section className="panel panel--form">
       <div className="panel__header">
         <p className="eyebrow">{isEditing ? 'Edit task' : 'Add task'}</p>
-        <h2>{isEditing ? 'Adjust the habit label.' : 'Create a simple daily task.'}</h2>
+        <h2>{isEditing ? 'Adjust the habit label.' : 'Add a daily line item.'}</h2>
       </div>
 
       <form className="task-form" onSubmit={handleSubmit}>
