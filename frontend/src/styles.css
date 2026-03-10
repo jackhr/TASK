@@ -297,6 +297,53 @@ button {
   gap: 12px;
 }
 
+.weekday-picker {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.weekday-picker legend {
+  padding: 0;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
+.weekday-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.weekday-pill {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid rgba(27, 30, 25, 0.12);
+  background: rgba(255, 255, 255, 0.7);
+  padding: 8px 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.weekday-pill input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.weekday-pill--selected {
+  background: rgba(135, 166, 63, 0.14);
+  border-color: rgba(135, 166, 63, 0.4);
+  color: #1b1e19;
+}
+
 .task-form__actions {
   display: flex;
   flex-wrap: wrap;
@@ -605,6 +652,21 @@ button {
   width: 100%;
 }
 
+.tracker-task__meta {
+  display: flex;
+}
+
+.tracker-task__meta span {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  background: rgba(135, 166, 63, 0.14);
+  color: var(--ink-soft);
+}
+
 .tracker-task__title {
   padding: 0;
   border: 0;
@@ -677,6 +739,15 @@ button {
   opacity: 0.52;
 }
 
+.check-shell--unscheduled {
+  background: rgba(217, 221, 212, 0.24);
+}
+
+.check-shell--unscheduled .check-shell__box {
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.66);
+}
+
 .history-legend {
   display: flex;
   gap: 10px;
@@ -709,6 +780,11 @@ button {
 .history-dot--future {
   background: rgba(217, 221, 212, 0.52);
   border: 1px dashed rgba(99, 107, 93, 0.28);
+}
+
+.history-dot--off {
+  background: rgba(217, 221, 212, 0.28);
+  border: 1px solid rgba(99, 107, 93, 0.2);
 }
 
 .history-list {
@@ -845,6 +921,10 @@ button {
   border: 1px dashed rgba(99, 107, 93, 0.18);
 }
 
+.contribution-cell--off {
+  background: rgba(217, 221, 212, 0.24);
+}
+
 .contribution-cell--pad {
   background: transparent;
 }
@@ -893,6 +973,10 @@ button {
   .session-bar {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .weekday-picker__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .tracker-board {

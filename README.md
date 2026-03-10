@@ -86,9 +86,16 @@ If you must use `public_html/`:
 ```json
 {
   "title": "Drink 2L water",
-  "description": "Spread it across the day"
+  "description": "Spread it across the day",
+  "recurrenceType": "daily",
+  "recurrenceDays": []
 }
 ```
+
+`recurrenceType` can be:
+- `daily`
+- `weekdays`
+- `custom` (requires `recurrenceDays` with weekday numbers `0-6`, where `0 = Sunday`)
 
 ### Completion payload
 
@@ -126,4 +133,10 @@ If you already imported an older schema, re-import `database/schema.sql` or migr
 
 - `users` table
 - `tasks.user_id` foreign key to `users.id`
+- `tasks.recurrence_type` and `tasks.recurrence_days`
 - `task_completions` foreign key to `tasks.id`
+
+For migration-based upgrades from the original baseline:
+1. Apply `database/init.sql`
+2. Apply `database/migrations/001_add_users_and_task_ownership.sql`
+3. Apply `database/migrations/002_add_task_recurrence.sql`

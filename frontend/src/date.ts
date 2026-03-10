@@ -1,3 +1,5 @@
+import type { RecurrenceType } from './types';
+
 export function parseDateOnly(value: string): Date {
   const [year, month, day] = value.split('-').map(Number);
   return new Date(year, month - 1, day, 12, 0, 0, 0);
@@ -41,6 +43,43 @@ export function isTodayDate(value: string, today: string): boolean {
 
 export function isFutureDate(value: string, today: string): boolean {
   return value > today;
+}
+
+export const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+type RecurrenceTaskLike = {
+  recurrenceType: RecurrenceType;
+  recurrenceDays: number[];
+};
+
+export function dateWeekdayIndex(value: string): number {
+  return parseDateOnly(value).getDay();
+}
+
+export function recurrenceLabel(recurrenceType: RecurrenceType): string {
+  if (recurrenceType === 'weekdays') {
+    return 'Weekdays';
+  }
+
+  if (recurrenceType === 'custom') {
+    return 'Custom';
+  }
+
+  return 'Daily';
+}
+
+export function isTaskScheduledForDate(task: RecurrenceTaskLike, date: string): boolean {
+  if (task.recurrenceType === 'daily') {
+    return true;
+  }
+
+  const weekday = dateWeekdayIndex(date);
+
+  if (task.recurrenceType === 'weekdays') {
+    return weekday >= 1 && weekday <= 5;
+  }
+
+  return task.recurrenceDays.includes(weekday);
 }
 
 type ContributionWeek = {

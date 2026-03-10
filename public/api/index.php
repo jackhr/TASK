@@ -147,6 +147,18 @@ try {
             ]);
         }
 
+        $task = $repository->find($userId, (int) $taskId, $today, $today);
+
+        if ($task === null) {
+            JsonResponse::error('Task not found.', 404);
+        }
+
+        if ($completion['completed'] && !isTaskScheduledOnDate($task, $completion['date'])) {
+            JsonResponse::error('Task is not scheduled for this day.', 422, [
+                'date' => 'Task is not scheduled for this day.',
+            ]);
+        }
+
         $task = $repository->setCompletion($userId, (int) $taskId, $completion['date'], $completion['completed']);
 
         if ($task === null) {
@@ -461,12 +473,12 @@ function buildMetricsPayload(
     $elapsedYearDates = array_values(array_filter($yearDates, fn (string $date): bool => $date <= $today));
     $taskCount = count($tasks);
     $totalCompleted = countCompletedAcrossTasks($tasks, $elapsedYearDates);
-    $totalPossible = $taskCount * count($elapsedYearDates);
+    $totalPossible = countScheduledAcrossTasks($tasks, $elapsedYearDates);
     $yearlyRate = $totalPossible === 0 ? 0 : (int) round(($totalCompleted / $totalPossible) * 100);
 
     $thisWeekDates = array_values(array_filter($weekDates, fn (string $date): bool => $date <= $today));
     $thisWeekCompleted = countCompletedAcrossTasks($tasks, $thisWeekDates);
-    $thisWeekPossible = $taskCount * count($thisWeekDates);
+    $thisWeekPossible = countScheduledAcrossTasks($tasks, $thisWeekDates);
     $weekRate = $thisWeekPossible === 0 ? 0 : (int) round(($thisWeekCompleted / $thisWeekPossible) * 100);
 
     return [
@@ -486,18 +498,18 @@ function buildMetricsPayload(
 
 function buildWeeklyMetrics(array $tasks, array $weekDates, string $today): array
 {
-    $taskCount = count($tasks);
     $rows = [];
 
     foreach ($weekDates as $date) {
         $completed = countCompletedAcrossTasks($tasks, [$date]);
+        $total = countScheduledAcrossTasks($tasks, [$date]);
         $future = $date > $today;
 
         $rows[] = [
             'date' => $date,
             'completed' => $completed,
-            'total' => $taskCount,
-            'rate' => ($future || $taskCount === 0) ? null : (int) round(($completed / $taskCount) * 100),
+            'total' => $total,
+            'rate' => ($future || $total === 0) ? null : (int) round(($completed / $total) * 100),
             'future' => $future,
         ];
     }
@@ -515,12 +527,11 @@ function buildMonthlyMetrics(array $tasks, array $yearDates, string $today): arr
         $months[$key][] = $date;
     }
 
-    $taskCount = count($tasks);
     $rows = [];
 
     foreach ($months as $key => $dates) {
         $elapsedDates = array_values(array_filter($dates, fn (string $date): bool => $date <= $today));
-        $possible = count($elapsedDates) * $taskCount;
+        $possible = countScheduledAcrossTasks($tasks, $elapsedDates);
         $completed = countCompletedAcrossTasks($tasks, $elapsedDates);
         [$year, $month] = array_map('intval', explode('-', $key));
         $label = (new DateTimeImmutable(sprintf('%04d-%02d-01', $year, $month)))->format('M');
@@ -539,19 +550,20 @@ function buildMonthlyMetrics(array $tasks, array $yearDates, string $today): arr
 
 function buildRankingMetrics(array $tasks, array $elapsedYearDates): array
 {
-    $dateCount = count($elapsedYearDates);
     $rows = [];
 
     foreach ($tasks as $task) {
         $completedDates = completionSet((array) ($task['completionDates'] ?? []));
-        $completed = countCompletedFromSet($completedDates, $elapsedYearDates);
-        ['current' => $currentStreak, 'best' => $bestStreak] = calculateStreaks($completedDates, $elapsedYearDates);
+        $scheduledDates = scheduledDatesForTask($task, $elapsedYearDates);
+        $possible = count($scheduledDates);
+        $completed = countCompletedFromSet($completedDates, $scheduledDates);
+        ['current' => $currentStreak, 'best' => $bestStreak] = calculateStreaks($completedDates, $scheduledDates);
 
         $rows[] = [
             'taskId' => (int) ($task['id'] ?? 0),
             'title' => (string) ($task['title'] ?? ''),
             'completed' => $completed,
-            'rate' => $dateCount === 0 ? 0 : (int) round(($completed / $dateCount) * 100),
+            'rate' => $possible === 0 ? 0 : (int) round(($completed / $possible) * 100),
             'currentStreak' => $currentStreak,
             'bestStreak' => $bestStreak,
         ];
@@ -578,7 +590,19 @@ function countCompletedAcrossTasks(array $tasks, array $dates): int
 
     foreach ($tasks as $task) {
         $completedSet = completionSet((array) ($task['completionDates'] ?? []));
-        $total += countCompletedFromSet($completedSet, $dates);
+        $scheduledDates = scheduledDatesForTask($task, $dates);
+        $total += countCompletedFromSet($completedSet, $scheduledDates);
+    }
+
+    return $total;
+}
+
+function countScheduledAcrossTasks(array $tasks, array $dates): int
+{
+    $total = 0;
+
+    foreach ($tasks as $task) {
+        $total += count(scheduledDatesForTask($task, $dates));
     }
 
     return $total;
@@ -606,6 +630,35 @@ function completionSet(array $completionDates): array
     }
 
     return $set;
+}
+
+function scheduledDatesForTask(array $task, array $dates): array
+{
+    return array_values(array_filter(
+        $dates,
+        fn (string $date): bool => isTaskScheduledOnDate($task, $date)
+    ));
+}
+
+function isTaskScheduledOnDate(array $task, string $date): bool
+{
+    $recurrenceType = strtolower((string) ($task['recurrenceType'] ?? 'daily'));
+    $weekday = (int) (new DateTimeImmutable($date))->format('w');
+
+    if ($recurrenceType === 'weekdays') {
+        return $weekday >= 1 && $weekday <= 5;
+    }
+
+    if ($recurrenceType !== 'custom') {
+        return true;
+    }
+
+    $days = array_values(array_filter(
+        array_map(static fn (mixed $value): int => (int) $value, (array) ($task['recurrenceDays'] ?? [])),
+        static fn (int $value): bool => $value >= 0 && $value <= 6
+    ));
+
+    return in_array($weekday, $days, true);
 }
 
 function calculateStreaks(array $completedSet, array $orderedDates): array

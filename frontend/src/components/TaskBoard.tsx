@@ -1,4 +1,11 @@
-import { formatCalendarDay, formatWeekdayShort, isFutureDate, isTodayDate } from '../date';
+import {
+  formatCalendarDay,
+  formatWeekdayShort,
+  isFutureDate,
+  isTaskScheduledForDate,
+  isTodayDate,
+  recurrenceLabel,
+} from '../date';
 import type { Task } from '../types';
 
 type TaskBoardProps = {
@@ -81,6 +88,9 @@ export function TaskBoard({
                         >
                           {task.title}
                         </button>
+                        <div className="tracker-task__meta">
+                          <span>{recurrenceLabel(task.recurrenceType)}</span>
+                        </div>
                         {task.description ? (
                           <p className="tracker-task__description">{task.description}</p>
                         ) : null}
@@ -107,15 +117,18 @@ export function TaskBoard({
 
                     {weekDates.map((date) => {
                       const checked = completedDates.has(date);
-                      const disabled = pending || date !== today;
+                      const scheduled = isTaskScheduledForDate(task, date);
+                      const disabled = pending || date !== today || !scheduled;
 
                       return (
                         <div className="tracker-board__cell tracker-board__cell--day" key={date}>
                           <label
                             className={`check-shell${
                               checked ? ' check-shell--checked' : ''
-                            }${isFutureDate(date, today) ? ' check-shell--future' : ''}`}
-                            title={`${task.title}: ${date}`}
+                            }${!scheduled ? ' check-shell--unscheduled' : ''}${
+                              isFutureDate(date, today) ? ' check-shell--future' : ''
+                            }`}
+                            title={`${task.title}: ${date}${scheduled ? '' : ' (not scheduled)'}`}
                           >
                             <input
                               checked={checked}

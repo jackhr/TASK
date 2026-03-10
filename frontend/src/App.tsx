@@ -18,9 +18,13 @@ import type {
 } from './types';
 
 function toPayload(values: TaskFormValues): TaskPayload {
+  const recurrenceDays = Array.from(new Set(values.recurrenceDays)).sort((left, right) => left - right);
+
   return {
     title: values.title.trim(),
     description: values.description.trim(),
+    recurrenceType: values.recurrenceType,
+    recurrenceDays,
   };
 }
 

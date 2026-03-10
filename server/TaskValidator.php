@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 final class TaskValidator
 {
+    private const RECURRENCE_DAILY = 'daily';
+    private const RECURRENCE_WEEKDAYS = 'weekdays';
+    private const RECURRENCE_CUSTOM = 'custom';
+
     public static function validateForCreate(array $input): array
     {
         return self::validateTask($input, false);
@@ -69,6 +73,45 @@ final class TaskValidator
             $data['description'] = null;
         }
 
+        $hasRecurrenceType = array_key_exists('recurrenceType', $input);
+        $hasRecurrenceDays = array_key_exists('recurrenceDays', $input);
+        $recurrenceType = self::RECURRENCE_DAILY;
+
+        if ($partial && $hasRecurrenceDays && !$hasRecurrenceType) {
+            $errors['recurrenceType'] = 'Recurrence type is required when updating recurrence days.';
+        }
+
+        if (!$partial || $hasRecurrenceType) {
+            $recurrenceType = strtolower(trim((string) ($input['recurrenceType'] ?? self::RECURRENCE_DAILY)));
+            $validTypes = [
+                self::RECURRENCE_DAILY,
+                self::RECURRENCE_WEEKDAYS,
+                self::RECURRENCE_CUSTOM,
+            ];
+
+            if (!in_array($recurrenceType, $validTypes, true)) {
+                $errors['recurrenceType'] = 'Recurrence type must be daily, weekdays, or custom.';
+            } else {
+                $data['recurrence_type'] = $recurrenceType;
+            }
+
+            if ($recurrenceType === self::RECURRENCE_CUSTOM) {
+                if (!$hasRecurrenceDays) {
+                    $errors['recurrenceDays'] = 'Custom recurrence requires one or more weekdays.';
+                } else {
+                    $days = self::normalizeWeekdays($input['recurrenceDays']);
+
+                    if ($days === []) {
+                        $errors['recurrenceDays'] = 'Select at least one weekday for custom recurrence.';
+                    } else {
+                        $data['recurrence_days'] = implode(',', $days);
+                    }
+                }
+            } else {
+                $data['recurrence_days'] = null;
+            }
+        }
+
         if ($partial && $data === []) {
             $errors['general'] = 'Provide at least one field to update.';
         }
@@ -78,6 +121,35 @@ final class TaskValidator
         }
 
         return $data;
+    }
+
+    private static function normalizeWeekdays(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $days = [];
+
+        foreach ($value as $day) {
+            $weekday = filter_var($day, FILTER_VALIDATE_INT, [
+                'options' => [
+                    'min_range' => 0,
+                    'max_range' => 6,
+                ],
+            ]);
+
+            if ($weekday === false) {
+                continue;
+            }
+
+            $days[$weekday] = true;
+        }
+
+        $normalized = array_map('intval', array_keys($days));
+        sort($normalized, SORT_NUMERIC);
+
+        return $normalized;
     }
 
     private static function stringLength(string $value): int

@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     user_id INT UNSIGNED NOT NULL,
     title VARCHAR(255) NOT NULL,
     description TEXT NULL,
+    recurrence_type VARCHAR(20) NOT NULL DEFAULT 'daily',
+    recurrence_days VARCHAR(32) NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'todo',
     priority VARCHAR(20) NOT NULL DEFAULT 'medium',
     due_date DATETIME NULL,

@@ -1,7 +1,11 @@
+export type RecurrenceType = 'daily' | 'weekdays' | 'custom';
+
 export interface Task {
   id: number;
   title: string;
   description: string;
+  recurrenceType: RecurrenceType;
+  recurrenceDays: number[];
   completionDates: string[];
   createdAt: string;
   updatedAt: string;
@@ -10,11 +14,15 @@ export interface Task {
 export interface TaskPayload {
   title: string;
   description: string;
+  recurrenceType: RecurrenceType;
+  recurrenceDays: number[];
 }
 
 export interface TaskFormValues {
   title: string;
   description: string;
+  recurrenceType: RecurrenceType;
+  recurrenceDays: number[];
 }
 
 export interface CompletionPayload {

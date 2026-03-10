@@ -1,4 +1,9 @@
-import { buildContributionWeeks, formatLongDate, isFutureDate } from '../date';
+import {
+  buildContributionWeeks,
+  formatLongDate,
+  isFutureDate,
+  isTaskScheduledForDate,
+} from '../date';
 import type { Task } from '../types';
 
 type TaskHistoryProps = {
@@ -44,6 +49,10 @@ export function TaskHistory({
             <i className="history-dot history-dot--future" />
             Future day
           </span>
+          <span className="history-legend__item">
+            <i className="history-dot history-dot--off" />
+            Not scheduled
+          </span>
         </div>
       </div>
 
@@ -53,9 +62,14 @@ export function TaskHistory({
         <div className="history-list">
           {tasks.map((task) => {
             const completedDates = new Set(task.completionDates);
-            const doneCount = countCompleted(elapsedDates, task.completionDates);
+            const scheduledElapsedDates = elapsedDates.filter((date) =>
+              isTaskScheduledForDate(task, date),
+            );
+            const doneCount = countCompleted(scheduledElapsedDates, task.completionDates);
             const ratio =
-              elapsedDates.length === 0 ? 0 : Math.round((doneCount / elapsedDates.length) * 100);
+              scheduledElapsedDates.length === 0
+                ? 0
+                : Math.round((doneCount / scheduledElapsedDates.length) * 100);
 
             return (
               <article
@@ -69,7 +83,7 @@ export function TaskHistory({
                   </div>
                   <div className="history-row__stats">
                     <strong>{doneCount}</strong>
-                    <span>{ratio}% of days so far</span>
+                    <span>{ratio}% of scheduled days</span>
                   </div>
                 </div>
 
@@ -110,20 +124,27 @@ export function TaskHistory({
 
                               const completed = completedDates.has(date);
                               const future = isFutureDate(date, today);
+                              const scheduled = isTaskScheduledForDate(task, date);
+
+                              let status = ' contribution-cell--missed';
+                              let statusLabel = 'not completed';
+
+                              if (future) {
+                                status = ' contribution-cell--future';
+                                statusLabel = 'future day';
+                              } else if (!scheduled) {
+                                status = ' contribution-cell--off';
+                                statusLabel = 'not scheduled';
+                              } else if (completed) {
+                                status = ' contribution-cell--done';
+                                statusLabel = 'completed';
+                              }
 
                               return (
                                 <span
                                   key={date}
-                                  className={`contribution-cell${
-                                    completed
-                                      ? ' contribution-cell--done'
-                                      : future
-                                        ? ' contribution-cell--future'
-                                        : ' contribution-cell--missed'
-                                  }`}
-                                  title={`${formatLongDate(date)}: ${
-                                    completed ? 'completed' : future ? 'future day' : 'not completed'
-                                  }`}
+                                  className={`contribution-cell${status}`}
+                                  title={`${formatLongDate(date)}: ${statusLabel}`}
                                 />
                               );
                             })}

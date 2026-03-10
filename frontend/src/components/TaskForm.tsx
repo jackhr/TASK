@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 
+import { WEEKDAY_LABELS } from '../date';
 import type { Task, TaskFormValues } from '../types';
 
 type TaskFormProps = {
@@ -13,6 +14,8 @@ type TaskFormProps = {
 const EMPTY_FORM: TaskFormValues = {
   title: '',
   description: '',
+  recurrenceType: 'daily',
+  recurrenceDays: [],
 };
 
 function createFormState(task: Task | null): TaskFormValues {
@@ -23,6 +26,8 @@ function createFormState(task: Task | null): TaskFormValues {
   return {
     title: task.title,
     description: task.description,
+    recurrenceType: task.recurrenceType,
+    recurrenceDays: [...task.recurrenceDays],
   };
 }
 
@@ -37,7 +42,32 @@ export function TaskForm({ task, isSaving, onCancel, onSubmit }: TaskFormProps) 
     event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
   ) {
     const { name, value } = event.target;
+
+    if (name === 'recurrenceType') {
+      const recurrenceType = value as TaskFormValues['recurrenceType'];
+      setValues((current) => ({
+        ...current,
+        recurrenceType,
+        recurrenceDays: recurrenceType === 'custom' ? current.recurrenceDays : [],
+      }));
+      return;
+    }
+
     setValues((current) => ({ ...current, [name]: value }));
+  }
+
+  function toggleCustomDay(day: number) {
+    setValues((current) => {
+      const hasDay = current.recurrenceDays.includes(day);
+      const recurrenceDays = hasDay
+        ? current.recurrenceDays.filter((value) => value !== day)
+        : [...current.recurrenceDays, day];
+
+      return {
+        ...current,
+        recurrenceDays: recurrenceDays.sort((left, right) => left - right),
+      };
+    });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -78,6 +108,44 @@ export function TaskForm({ task, isSaving, onCancel, onSubmit }: TaskFormProps) 
             rows={4}
           />
         </label>
+
+        <label className="field">
+          <span>Schedule</span>
+          <select
+            name="recurrenceType"
+            value={values.recurrenceType}
+            onChange={handleChange}
+          >
+            <option value="daily">Daily</option>
+            <option value="weekdays">Weekdays (Mon-Fri)</option>
+            <option value="custom">Custom weekdays</option>
+          </select>
+        </label>
+
+        {values.recurrenceType === 'custom' ? (
+          <fieldset className="weekday-picker">
+            <legend>Custom days</legend>
+            <div className="weekday-picker__grid">
+              {WEEKDAY_LABELS.map((label, day) => {
+                const selected = values.recurrenceDays.includes(day);
+
+                return (
+                  <label
+                    key={label}
+                    className={`weekday-pill${selected ? ' weekday-pill--selected' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => toggleCustomDay(day)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        ) : null}
 
         <div className="task-form__actions">
           <button className="button button--primary" type="submit" disabled={isSaving}>

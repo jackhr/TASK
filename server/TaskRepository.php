@@ -11,7 +11,7 @@ final class TaskRepository
     public function getAllWithCompletions(int $userId, string $fromDate, string $toDate): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT id, title, description, created_at, updated_at
+            'SELECT id, title, description, recurrence_type, recurrence_days, created_at, updated_at
              FROM tasks
              WHERE user_id = :user_id
              ORDER BY created_at ASC, title ASC'
@@ -40,7 +40,7 @@ final class TaskRepository
     public function find(int $userId, int $id, ?string $fromDate = null, ?string $toDate = null): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT id, title, description, created_at, updated_at
+            'SELECT id, title, description, recurrence_type, recurrence_days, created_at, updated_at
              FROM tasks
              WHERE id = :id AND user_id = :user_id
              LIMIT 1'
@@ -67,12 +67,15 @@ final class TaskRepository
     public function create(int $userId, array $data): array
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO tasks (user_id, title, description) VALUES (:user_id, :title, :description)'
+            'INSERT INTO tasks (user_id, title, description, recurrence_type, recurrence_days)
+             VALUES (:user_id, :title, :description, :recurrence_type, :recurrence_days)'
         );
         $statement->execute([
             'user_id' => $userId,
             'title' => $data['title'],
             'description' => $data['description'],
+            'recurrence_type' => $data['recurrence_type'],
+            'recurrence_days' => $data['recurrence_days'],
         ]);
 
         return $this->find($userId, (int) $this->pdo->lastInsertId()) ??
@@ -172,14 +175,47 @@ final class TaskRepository
 
     private function mapTask(array $row, array $completionDates): array
     {
+        $recurrenceType = isset($row['recurrence_type']) ? (string) $row['recurrence_type'] : 'daily';
+
         return [
             'id' => (int) $row['id'],
             'title' => (string) $row['title'],
             'description' => $row['description'] === null ? '' : (string) $row['description'],
+            'recurrenceType' => $recurrenceType,
+            'recurrenceDays' => $this->parseRecurrenceDays($row['recurrence_days'] ?? null),
             'completionDates' => $completionDates,
             'createdAt' => $this->toIsoString($row['created_at']) ?? '',
             'updatedAt' => $this->toIsoString($row['updated_at']) ?? '',
         ];
+    }
+
+    private function parseRecurrenceDays(mixed $raw): array
+    {
+        if (!is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $days = [];
+
+        foreach (explode(',', $raw) as $value) {
+            $weekday = filter_var(trim($value), FILTER_VALIDATE_INT, [
+                'options' => [
+                    'min_range' => 0,
+                    'max_range' => 6,
+                ],
+            ]);
+
+            if ($weekday === false) {
+                continue;
+            }
+
+            $days[$weekday] = true;
+        }
+
+        $normalized = array_map('intval', array_keys($days));
+        sort($normalized, SORT_NUMERIC);
+
+        return $normalized;
     }
 
     private function loadCompletionDates(array $taskIds, string $fromDate, string $toDate): array
